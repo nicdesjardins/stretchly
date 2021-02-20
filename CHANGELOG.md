@@ -6,15 +6,51 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 ### Added
+- Punjabi translations
+- Gujarati translations
+- Persian translations
+- Hebrew translations
+- Finnish translations
+- Indonesian translations
+
+### Changed
+- Updated many translations
+
+
+## [1.4.0] - 2020-12-25
+### Added
+- Better handling of app errors: error will ask user to report issue
+- Esperanto translations
+- Norwegian translations
+- Snow white theme
+- experimental Linux builds for arm
+
+### Changed
+- Updated many translations
+
+### Fixed
+- notification of new version being showed even disabled
+- browser tab non-responsive after resuming
+- don't show notification title for macOS Big Sur
+- DND mode in macOS Big Sur
+
+## [1.3.0] - 2020-11-08
+### Added
+- control a running instance from command line  
 - advanced option to disable check for new version
 - new break ideas
 
 ### Changed
-- Updated Italian translation
+- Updated Italian translations
+- Updated Spanish translations
+- Updated German translations
+- prevent redundant title notification on Windows 10 (20H2 Update)
 
 ### Fixed
 - problem with DoNotDisturb being ignored when resuming breaks
 - taskbar visibility issue on Windows
+- issue with idle time and breaks causing negative timers
+- issue with Pause until morning in some timezones
 
 ## [1.2.0] - 2020-10-03
 ### Added
@@ -503,7 +539,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - resume/pause functionality for reminder
 - scripts for creating installers for OS X, Windows, Linux
 
-[Unreleased]: https://github.com/hovancik/stretchly/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/hovancik/stretchly/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/hovancik/stretchly/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/hovancik/stretchly/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/hovancik/stretchly/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/hovancik/stretchly/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/hovancik/stretchly/compare/v0.99.5...v1.0.0

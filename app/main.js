@@ -1,11 +1,24 @@
-// process.on('uncaughtException', (...args) => console.error(...args))
 const { app, nativeTheme, BrowserWindow, Tray, Menu, ipcMain, shell, dialog, globalShortcut } = require('electron')
 const path = require('path')
 const i18next = require('i18next')
 const Backend = require('i18next-node-fs-backend')
 const log = require('electron-log')
 
-startI18next()
+process.on('uncaughtException', (err, _) => {
+  log.error(err)
+  const dialogOpts = {
+    type: 'error',
+    title: 'Stretchly',
+    message: 'An error occured while running Stretchly and it will now quit. To report the issue, click Report.',
+    buttons: ['Report', 'OK']
+  }
+  dialog.showMessageBox(dialogOpts).then((returnValue) => {
+    if (returnValue.response === 0) {
+      shell.openExternal('https://github.com/hovancik/stretchly/issues')
+    }
+    app.quit()
+  })
+})
 
 nativeTheme.on('updated', function theThemeHasChanged () {
   appIcon.setImage(trayIconPath())
@@ -17,6 +30,7 @@ const IdeasLoader = require('./utils/ideasLoader')
 const BreaksPlanner = require('./breaksPlanner')
 const AppIcon = require('./utils/appIcon')
 const { UntilMorning } = require('./utils/untilMorning')
+const Command = require('./utils/commands')
 
 let microbreakIdeas
 let breakIdeas
@@ -32,6 +46,7 @@ let syncPreferencesWindow = null
 let myStretchlyWindow = null
 let settings
 let pausedForSuspendOrLock = false
+let nextIdea = null
 
 app.setAppUserModelId('net.hovancik.stretchly')
 
@@ -43,7 +58,10 @@ global.shared = {
 const gotTheLock = app.requestSingleInstanceLock()
 
 if (!gotTheLock) {
-  console.log('Stretchly is already running.')
+  console.log('Stretchly command instance: started\n')
+  const args = process.argv.slice(app.isPackaged ? 1 : 2)
+  const cmd = new Command(args, app.getVersion())
+  cmd.runOrForward()
   app.quit()
   return
 }
@@ -52,6 +70,7 @@ app.on('ready', startProcessWin)
 app.on('ready', loadSettings)
 app.on('ready', createTrayIcon)
 app.on('ready', startPowerMonitoring)
+app.on('second-instance', runCommand)
 app.on('window-all-closed', () => {
   // do nothing, so app wont get closed
 })
@@ -60,11 +79,11 @@ function startI18next () {
   i18next
     .use(Backend)
     .init({
-      lng: 'en',
+      lng: settings.get('language'),
       fallbackLng: 'en',
       debug: false,
       backend: {
-        loadPath: `${__dirname}/locales/{{lng}}.json`,
+        loadPath: path.join(__dirname, '/locales/{{lng}}.json'),
         jsonIndent: 2
       }
     }, function (err, t) {
@@ -119,6 +138,7 @@ function numberOfDisplays () {
 
 function closeWindows (windowArray) {
   for (let i = windowArray.length - 1; i >= 0; i--) {
+    windowArray[i].hide()
     windowArray[i].close()
   }
   return null
@@ -218,7 +238,7 @@ function trayIconPath () {
     platform: process.platform
   }
   const trayIconFileName = new AppIcon(params).trayIconFileName
-  return `${__dirname}/images/app-icons/${trayIconFileName}`
+  return path.join(__dirname, '/images/app-icons/', trayIconFileName)
 }
 
 function windowIconPath () {
@@ -230,15 +250,16 @@ function windowIconPath () {
     platform: process.platform
   }
   const windowIconFileName = new AppIcon(params).windowIconFileName
-  return `${__dirname}/images/app-icons/${windowIconFileName}`
+  return path.join(__dirname, '/images/app-icons', windowIconFileName)
 }
 
 function startProcessWin () {
-  const modalPath = `file://${__dirname}/process.html`
+  const modalPath = path.join('file://', __dirname, '/process.html')
   processWin = new BrowserWindow({
     show: false,
     webPreferences: {
-      nodeIntegration: true
+      nodeIntegration: true,
+      enableRemoteModule: true
     }
   })
   processWin.loadURL(modalPath)
@@ -249,16 +270,18 @@ function startProcessWin () {
 
 function createWelcomeWindow () {
   if (settings.get('isFirstRun')) {
-    const modalPath = `file://${__dirname}/welcome.html`
+    const modalPath = path.join('file://', __dirname, '/welcome.html')
     welcomeWin = new BrowserWindow({
       x: displaysX(-1, 1000),
       y: displaysY(),
       width: 1000,
+      height: 685,
       autoHideMenuBar: true,
       icon: windowIconPath(),
       backgroundColor: 'EDEDED',
       webPreferences: {
-        nodeIntegration: true
+        nodeIntegration: true,
+        enableRemoteModule: true
       }
     })
     welcomeWin.loadURL(modalPath)
@@ -275,7 +298,7 @@ function createContributorSettingsWindow () {
     contributorPreferencesWindow.show()
     return
   }
-  const modalPath = `file://${__dirname}/contributor-preferences.html`
+  const modalPath = path.join('file://', __dirname, '/contributor-preferences.html')
   contributorPreferencesWindow = new BrowserWindow({
     x: displaysX(-1, 735),
     y: displaysY(),
@@ -284,7 +307,8 @@ function createContributorSettingsWindow () {
     icon: windowIconPath(),
     backgroundColor: 'EDEDED',
     webPreferences: {
-      nodeIntegration: true
+      nodeIntegration: true,
+      enableRemoteModule: true
     }
   })
   contributorPreferencesWindow.loadURL(modalPath)
@@ -356,10 +380,6 @@ function startMicrobreak () {
   if (!microbreakIdeas) {
     loadIdeas()
   }
-  if (breakPlanner.naturalBreaksManager.idleTime > settings.get('breakDuration')) {
-    log.warn('Stretchly: in natural break, not starting Mini Break')
-    return
-  }
   // don't start another break if break running
   if (microbreakWins) {
     log.warn('Stretchly: Mini Break already running, not starting Mini Break')
@@ -385,10 +405,11 @@ function startMicrobreak () {
     })
   }
 
-  const modalPath = `file://${__dirname}/microbreak.html`
+  const modalPath = path.join('file://', __dirname, '/microbreak.html')
   microbreakWins = []
 
-  const idea = settings.get('ideas') ? microbreakIdeas.randomElement : ['']
+  const idea = nextIdea || (settings.get('ideas') ? microbreakIdeas.randomElement : [''])
+  nextIdea = null
 
   if (settings.get('microbreakStartSoundPlaying') && !settings.get('silentNotifications')) {
     processWin.webContents.send('playSound', settings.get('audio'), settings.get('volume'))
@@ -410,7 +431,8 @@ function startMicrobreak () {
       title: 'Stretchly',
       alwaysOnTop: true,
       webPreferences: {
-        nodeIntegration: true
+        nodeIntegration: true,
+        enableRemoteModule: true
       }
     }
 
@@ -440,7 +462,7 @@ function startMicrobreak () {
       }
       microbreakWinLocal.webContents.send('microbreakIdea', idea)
       microbreakWinLocal.webContents.send('progress', startTime,
-        breakDuration, strictMode, postponable, postponableDurationPercent, settings.get('endBreakShortcut'))
+        breakDuration, strictMode, postponable, postponableDurationPercent, settings)
       if (!settings.get('fullscreen') && process.platform !== 'darwin') {
         setTimeout(() => {
           microbreakWinLocal.center()
@@ -462,16 +484,15 @@ function startMicrobreak () {
       break
     }
   }
+  if (process.platform === 'darwin') {
+    app.dock.hide()
+  }
   updateTray()
 }
 
 function startBreak () {
   if (!breakIdeas) {
     loadIdeas()
-  }
-  if (breakPlanner.naturalBreaksManager.idleTime > settings.get('breakDuration')) {
-    log.warn('Stretchly: in natural break, not starting Long Break')
-    return
   }
   if (breakWins) {
     log.warn('Stretchly: Long Break already running, not starting Long Break')
@@ -497,10 +518,12 @@ function startBreak () {
     })
   }
 
-  const modalPath = `file://${__dirname}/break.html`
+  const modalPath = path.join('file://', __dirname, '/break.html')
   breakWins = []
 
-  const idea = settings.get('ideas') ? breakIdeas.randomElement : ['', '']
+  const defaultNextIdea = settings.get('ideas') ? breakIdeas.randomElement : ['', '']
+  const idea = nextIdea ? (nextIdea.map((val, index) => val || defaultNextIdea[index])) : defaultNextIdea
+  nextIdea = null
 
   if (settings.get('breakStartSoundPlaying') && !settings.get('silentNotifications')) {
     processWin.webContents.send('playSound', settings.get('audio'), settings.get('volume'))
@@ -522,7 +545,8 @@ function startBreak () {
       title: 'Stretchly',
       alwaysOnTop: true,
       webPreferences: {
-        nodeIntegration: true
+        nodeIntegration: true,
+        enableRemoteModule: true
       }
     }
 
@@ -552,7 +576,7 @@ function startBreak () {
       }
       breakWinLocal.webContents.send('breakIdea', idea)
       breakWinLocal.webContents.send('progress', startTime,
-        breakDuration, strictMode, postponable, postponableDurationPercent, settings.get('endBreakShortcut'))
+        breakDuration, strictMode, postponable, postponableDurationPercent, settings)
       if (!settings.get('fullscreen') && process.platform !== 'darwin') {
         setTimeout(() => {
           breakWinLocal.center()
@@ -573,7 +597,9 @@ function startBreak () {
       break
     }
   }
-
+  if (process.platform === 'darwin') {
+    app.dock.hide()
+  }
   updateTray()
 }
 
@@ -663,6 +689,7 @@ function loadSettings () {
   const dir = app.getPath('userData')
   const settingsFile = `${dir}/config.json`
   settings = new AppSettings(settingsFile)
+  startI18next()
   breakPlanner = new BreaksPlanner(settings)
   breakPlanner.nextBreak() // plan first break
   breakPlanner.on('startMicrobreakNotification', () => { startMicrobreakNotification() })
@@ -675,7 +702,6 @@ function loadSettings () {
   breakPlanner.on('updateToolTip', function () {
     updateTray()
   })
-  i18next.changeLanguage(settings.get('language'))
   createWelcomeWindow()
   nativeTheme.themeSource = settings.get('themeSource')
 }
@@ -725,7 +751,7 @@ function createPreferencesWindow () {
     preferencesWin.show()
     return
   }
-  const modalPath = `file://${__dirname}/preferences.html`
+  const modalPath = path.join('file://', __dirname, '/preferences.html')
   const maxHeight = (electron.screen
     .getDisplayNearestPoint(electron.screen.getCursorScreenPoint())
     .workAreaSize.height - 530) / 2.0 + 490
@@ -739,7 +765,8 @@ function createPreferencesWindow () {
     y: displaysY(-1, 530),
     backgroundColor: '#EDEDED',
     webPreferences: {
-      nodeIntegration: true
+      nodeIntegration: true,
+      enableRemoteModule: true
     }
   })
   preferencesWin.loadURL(modalPath)
@@ -841,7 +868,7 @@ function getTrayMenu () {
         }, {
           label: i18next.t('main.untilMorning'),
           click: function () {
-            const untilMorning = new UntilMorning(settings).timeUntilMorning()
+            const untilMorning = new UntilMorning(settings).msToSunrise()
             pauseBreaks(untilMorning)
           }
         }, {
@@ -857,7 +884,9 @@ function getTrayMenu () {
   }
 
   if (breakPlanner.scheduler.reference === 'finishMicrobreak' && settings.get('microbreakStrictMode')) {
+    // nothing
   } else if (breakPlanner.scheduler.reference === 'finishBreak' && settings.get('breakStrictMode')) {
+    // nothing
   } else {
     trayMenu.push({
       label: i18next.t('main.resetBreaks'),
@@ -919,6 +948,62 @@ function showNotification (text) {
     text: text,
     silent: settings.get('silentNotifications')
   })
+}
+
+function runCommand (event, argv, workingDirectory) {
+  const args = argv.slice(app.isPackaged ? 1 : 2)
+  const cmd = new Command(args, app.getVersion())
+
+  // if this command is already executed by the second-instance, return early
+  if (!cmd.checkInMain()) {
+    log.info('Stretchly: command executed in second-instance, dropped in main instance')
+    return
+  }
+
+  switch (cmd.command) {
+    case 'reset':
+      log.info('Stretchly: reseting breaks (requested by second instance)')
+      resetBreaks()
+      break
+
+    case 'mini':
+      log.info('Stretchly: skip to Mini Break (requested by second instance)')
+      if (cmd.options.title) nextIdea = [cmd.options.title]
+      if (!cmd.options.noskip) skipToMicrobreak()
+      break
+
+    case 'long':
+      log.info('Stretchly: skip to Long Break (requested by second instance)')
+      nextIdea = [cmd.options.title ? cmd.options.title : null, cmd.options.text ? cmd.options.text : null]
+      if (!cmd.options.noskip) skipToBreak()
+      break
+
+    case 'resume':
+      log.info('Stretchly: resume Breaks (requested by second instance)')
+      if (breakPlanner.isPaused) resumeBreaks(false)
+      break
+
+    case 'toggle':
+      log.info('Stretchly: toggle Breaks (requested by second instance)')
+      if (breakPlanner.isPaused) resumeBreaks(false)
+      else pauseBreaks(1)
+      break
+
+    case 'pause': {
+      log.info('Stretchly: pause Breaks (requested by second instance)')
+      const ms = cmd.durationToMs(settings)
+      // -1 indicates an invalid value
+      if (ms === -1) {
+        log.error('Stretchly: error when parsing duration to ms because of unvalid value')
+        return
+      }
+      pauseBreaks(ms)
+      break
+    }
+
+    default:
+      log.error(`Stretchly: Command ${cmd.command} is not supported`)
+  }
 }
 
 ipcMain.on('postpone-microbreak', function (event, shouldPlaySound) {

@@ -88,7 +88,7 @@ module.exports = [
     enabled: true
   },
   {
-    data: 'One should focus every 20 minutes for 20 seconds on an object that is 20 feet distance.',
+    data: 'Focus every 20 minutes for 20 seconds on an object at 20 feet distance.',
     enabled: true
   },
   {
@@ -112,11 +112,27 @@ module.exports = [
     enabled: true
   },
   {
-    data: 'With your eyes closed, slowly and gently move eyes up to the ceiling, then slowly down to the floor.',
+    data: 'With your eyes closed, slowly and gently raise your eyes to the ceiling and back down to the floor.',
     enabled: true
   },
   {
-    data: 'With your eyes closed, slowly and gently move eyes to the left, then slowly to the right.',
+    data: 'With your eyes closed, slowly and gently move your eyes to the left, then slowly to the right.',
+    enabled: true
+  },
+  {
+    data: 'Shake your hands out to get some relief.',
+    enabled: true
+  },
+  {
+    data: 'One at a time, touch the tip of each finger to the tip of your thumb so they make an O-shape.',
+    enabled: true
+  },
+  {
+    data: 'Make a fist and then slide your fingers up until they point toward the ceiling, like you\'re telling someone to stop.',
+    enabled: true
+  },
+  {
+    data: 'Make a fist and then fan your fingers out and stretch them as far as you can.',
     enabled: true
   }
 ]

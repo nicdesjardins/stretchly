@@ -1,9 +1,11 @@
 const chai = require('chai')
 const {
   formatTimeRemaining, formatTimeIn,
-  canSkip, canPostpone, formatKeyboardShortcut
+  canSkip, canPostpone, formatKeyboardShortcut,
+  shouldShowNotificationTitle
 } = require('../app/utils/utils')
 const i18next = require('i18next')
+const path = require('path')
 const Backend = require('i18next-node-fs-backend')
 const sinon = require('sinon')
 
@@ -18,7 +20,7 @@ describe('Times formatters', function () {
         fallbackLng: 'en',
         debug: false,
         backend: {
-          loadPath: `${__dirname}/../app/locales/{{lng}}.json`,
+          loadPath: path.join(__dirname, '/../app/locales/{{lng}}.json'),
           jsonIndent: 2
         }
       }, function (err, t) {
@@ -134,6 +136,26 @@ describe('canSkip and canPostpone', () => {
     })
     it('formats + to have spaces', () => {
       formatKeyboardShortcut('Command+X').should.equal('Command + X')
+    })
+  })
+
+  describe('shouldShowNotificationTitle', () => {
+    it('works for older windows', () => {
+      shouldShowNotificationTitle('win32', '10.0.19041').should.equal(true)
+      shouldShowNotificationTitle('win32', '6.3.9600').should.equal(true)
+    })
+    it('works for new windows', () => {
+      shouldShowNotificationTitle('win32', '10.0.19042').should.equal(false)
+    })
+    it('works for older mac', () => {
+      shouldShowNotificationTitle('darwin', '10.15.1').should.equal(true)
+    })
+    it('works for new mac', () => {
+      shouldShowNotificationTitle('darwin', '10.16').should.equal(false)
+      shouldShowNotificationTitle('darwin', '11.0.1').should.equal(false)
+    })
+    it('works for others', () => {
+      shouldShowNotificationTitle('linux', '1.0.0').should.equal(true)
     })
   })
 })
